@@ -13,7 +13,6 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     uploader: S3Uploader,
-
 }
 
 
