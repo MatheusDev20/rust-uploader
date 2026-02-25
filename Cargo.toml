@@ -12,3 +12,4 @@ aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 dotenvy = "0.15"
 uuid = {version = "1", features = ["v4"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "uuid", "migrate"] }

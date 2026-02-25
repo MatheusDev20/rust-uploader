@@ -54,6 +54,7 @@ In `main()`:
 ```rust
 let db = PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await.unwrap();
 let state = AppState { uploader, db };
+
 ```
 
 ---
