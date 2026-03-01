@@ -1,3 +1,4 @@
+use axum::{Json, http::StatusCode};
 use serde::{ser::SerializeStruct, Serialize};
 
 pub struct UploadResponse {
@@ -15,4 +16,27 @@ impl Serialize for UploadResponse {
         state.serialize_field("message", &self.message)?;
         state.end()
     }
+}
+
+// Type alias for the handler return type.
+// In JS this would be: type ApiResponse = [StatusCode, UploadResponse]
+// Here it's a tuple — Axum reads the first element as the HTTP status code
+// and the second as the response body. No need to build a Response object manually.
+pub type ApiResponse = (StatusCode, Json<UploadResponse>);
+
+// Helper constructors — one per HTTP status we actually use.
+// Each takes the message and wraps it in the right tuple.
+// The `status` field in the JSON body mirrors the HTTP status semantically,
+// so callers don't need to think about both independently.
+
+pub fn bad_request(message: &'static str) -> ApiResponse {
+    (StatusCode::BAD_REQUEST, Json(UploadResponse { status: "error", message }))
+}
+
+pub fn internal_error(message: &'static str) -> ApiResponse {
+    (StatusCode::INTERNAL_SERVER_ERROR, Json(UploadResponse { status: "error", message }))
+}
+
+pub fn ok(message: &'static str) -> ApiResponse {
+    (StatusCode::OK, Json(UploadResponse { status: "ok", message }))
 }

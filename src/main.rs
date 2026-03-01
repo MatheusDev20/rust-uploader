@@ -1,7 +1,7 @@
 mod s3;
 mod http;
 mod utils;
-mod extractor;
+mod ffmpeg;
 
 mod entities;
 mod handlers;

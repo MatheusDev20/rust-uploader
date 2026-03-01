@@ -10,8 +10,6 @@ pub async fn create_uploader() -> S3Uploader {
     S3Uploader::new(client, bucket)
 }
 
-// Clone is required by Axum's State — it clones the uploader to inject it into each handler.
-// The AWS Client is already cheap to clone (it uses Arc internally, like a JS reference).
 #[derive(Clone)]
 pub struct S3Uploader {
     client: Client,
@@ -38,9 +36,9 @@ impl S3Uploader {
     pub async fn upload(
         &self,
         key: &str,
-        data: Vec<u8>,
+        data: &[u8],
     ) -> Result<(), aws_sdk_s3::Error> {
-        let body = ByteStream::from(data);
+        let body = ByteStream::from(data.to_vec()); // owns the bytes
 
         // This is the SDK call — same as PutObjectCommand in the JS SDK.
         // The chained .bucket().key().body() calls are the builder pattern:
