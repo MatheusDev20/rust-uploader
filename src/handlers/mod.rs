@@ -1,2 +1,2 @@
-pub mod upload;
-pub mod video;
+pub mod videos;
+pub mod resources;

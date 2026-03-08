@@ -1,0 +1,1 @@
+ALTER TABLE videos ADD COLUMN tags TEXT[] NOT NULL DEFAULT '{}';

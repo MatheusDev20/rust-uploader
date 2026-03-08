@@ -7,4 +7,4 @@ CREATE TABLE videos (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   status TEXT NOT NULL DEFAULT 'pending',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)
+);

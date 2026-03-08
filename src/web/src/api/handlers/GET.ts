@@ -11,6 +11,5 @@ export async function GET<T>(payload: Payload) {
   })
 
   const { data } = axiosResponse
-
   return data
 }

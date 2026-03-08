@@ -40,3 +40,30 @@ pub fn internal_error(message: &'static str) -> ApiResponse {
 pub fn ok(message: &'static str) -> ApiResponse {
     (StatusCode::OK, Json(UploadResponse { status: "ok", message }))
 }
+
+
+// Domain Errors
+
+#[derive(Debug)]
+pub enum CreateVideoError {
+    AlreadyExists,
+    Database(sqlx::Error),
+}
+
+impl From<sqlx::Error> for CreateVideoError {
+    fn from(err: sqlx::Error) -> Self {
+        CreateVideoError::Database(err)
+    }
+}
+
+#[derive(Debug)]
+pub enum CreateResourceError {
+    GenericError,
+    Database(sqlx::Error)
+}
+
+impl From<sqlx::Error> for CreateResourceError {
+    fn from(err: sqlx::Error) -> Self {
+        CreateResourceError::Database(err)
+    }
+}

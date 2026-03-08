@@ -10,12 +10,25 @@ mod routes;
 
 use s3::{create_uploader, S3Uploader};
 use sqlx::PgPool;
+use axum::extract::FromRef;
 use routes::init_routes;
 
 #[derive(Clone)]
 pub struct AppState {
     uploader: S3Uploader,
     db: PgPool
+}
+
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.db.clone()
+    }
+}
+
+impl FromRef<AppState> for S3Uploader {
+    fn from_ref(state: &AppState) -> Self {
+        state.uploader.clone()
+    }
 }
 
 

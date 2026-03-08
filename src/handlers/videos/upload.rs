@@ -1,11 +1,10 @@
 use axum::extract::{Multipart, State};
 use uuid::Uuid;
 
-use crate::entities::video::create_pending;
-use crate::entities::video::mark_ready;
+use crate::entities::video::{create_pending, mark_ready, set_thumbnail_url};
 use crate::ffmpeg::{extract_thumbnail, transcode_to_mp4};
 use crate::http::responses::{ApiResponse, bad_request, internal_error, ok};
-use crate::{AppState, utils::constants::UPLOADS_FOLDER};
+use crate::{AppState, utils::constants::UPLOADS_FOLDER, utils::slugify};
 
 pub async fn upload_handler(
     State(AppState { uploader, db }): State<AppState>,
@@ -15,6 +14,8 @@ pub async fn upload_handler(
     let mut video_file_bytes: Option<Vec<u8>> = None;
     let mut thumbnail_bytes: Option<Vec<u8>> = None;
     let mut source_ext: Option<String> = None;
+    let mut tags: Vec<String> = Vec::new();
+
 
     // Collect all multipart fields before acting on them.
     // Field order in a multipart body is not guaranteed — the client controls it —
@@ -50,6 +51,9 @@ pub async fn upload_handler(
             "thumbnail" => {
                 thumbnail_bytes = Some(field.bytes().await.unwrap().to_vec());
             }
+            "tags" => {
+                tags.extend(field.text().await.unwrap().split(',').map(|s| s.trim().to_string()));
+            }
 
             _ => {}
         }
@@ -68,24 +72,22 @@ pub async fn upload_handler(
         Some(t) => t,
         None => return bad_request("missing required field: title"),
     };
+
     let video_id = Uuid::new_v4();
     let ext = source_ext.unwrap_or_else(|| "mp4".to_string());
 
-    // Source key uses the real extension — no more lying about the format.
-    // e.g. "uploads/My Title/550e8400-e29b-41d4-a716-446655440000.mkv"
-    let source_key = format!("{}/{}/{}.{}", UPLOADS_FOLDER, title, video_id, ext);
+    // Slug is used in S3 keys only — safe for URLs, no spaces or special chars.
+    // The original `title` is preserved as-is for the database.
+    // e.g. "My Cool Video! (2026)" → "my-cool-video-2026"
+    let slug = slugify(&title);
 
-    // Processed key is always .mp4 — this is what the browser/player will use.
-    // e.g. "uploads/My Title/550e8400-..._processed.mp4"
-    let processed_key = format!("{}/{}/{}_processed.mp4", UPLOADS_FOLDER, title, video_id);
+    let source_key = format!("{}/{}/{}.{}", UPLOADS_FOLDER, slug, video_id, ext);
+    let processed_key = format!("{}/{}/{}_processed.mp4", UPLOADS_FOLDER, slug, video_id);
 
     // Phase 1: write the record BEFORE touching S3.
     // If the server crashes after this point but before Phase 2, the 'pending' record
     // survives — a background job can detect and retry or clean up orphaned uploads.
-    if create_pending(&db, video_id, &source_key, &title)
-        .await
-        .is_err()
-    {
+    if let Err(e) = create_pending(&db, video_id, &source_key, &title, &tags).await {
         return internal_error("failed to create video record");
     }
 
@@ -95,26 +97,28 @@ pub async fn upload_handler(
         return internal_error("upload to S3 failed");
     }
 
-    match thumbnail_bytes {
-        Some(bytes) => {
-            let thumb_key = format!("{}/{}/thumbnail.jpg", UPLOADS_FOLDER, title);
-            if uploader.upload(&thumb_key, &bytes).await.is_err() {
-                return internal_error("thumbnail upload to S3 failed");
-            }
-        }
-        None => {
-            let thumb_key = format!("{}/{}/thumbnail.jpg", UPLOADS_FOLDER, title);
-            let thumb_bytes = extract_thumbnail(&data, &title, 2.0);
+    let thumb_key = format!("{}/{}/thumbnail.jpg", UPLOADS_FOLDER, slug);
 
-            match thumb_bytes {
-                Ok(bytes) => {
-                    if uploader.upload(&thumb_key, &bytes).await.is_err() {
-                        return internal_error("thumbnail upload to S3 failed");
-                    }
-                }
-                Err(_) => return internal_error("failed to extract thumbnail"),
-            }
+    let thumb_bytes_to_upload = match thumbnail_bytes {
+        Some(bytes) => bytes,
+        None => match extract_thumbnail(&data, &title, 2.0) {
+            Ok(bytes) => bytes,
+            Err(_) => return internal_error("failed to extract thumbnail"),
+        },
+    };
+
+    // Upload thumbnail as public-read and get back the permanent public URL.
+    let thumb_url = match uploader.upload_public(&thumb_key, &thumb_bytes_to_upload).await {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("Failed to upload thumbnail to S3: {}", e);
+            return internal_error("thumbnail upload to S3 failed")
         }
+    };
+
+    // Persist the full public URL so clients can use it directly without a signed request.
+    if set_thumbnail_url(&db, video_id, &thumb_url).await.is_err() {
+        return internal_error("failed to persist thumbnail url");
     }
 
     // FIRE-AND-FORGET: spawn an independent background task for transcoding.

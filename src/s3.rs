@@ -1,27 +1,25 @@
-use aws_sdk_s3::{Client, presigning::PresigningConfig, primitives::ByteStream};
+use aws_sdk_s3::{Client, presigning::PresigningConfig, primitives::ByteStream, types::ObjectCannedAcl};
 use std::time::Duration;
 
 pub async fn create_uploader() -> S3Uploader {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-    //println!("{:?}", config);
-    // Borrow the client -> Ownership system
     let client = Client::new(&config);
     let bucket = std::env::var("AWS_S3_BUCKET").expect("AWS_S3_BUCKET must be set");
+    let region = std::env::var("AWS_REGION").expect("AWS_REGION must be set");
 
-    S3Uploader::new(client, bucket)
+    S3Uploader::new(client, bucket, region)
 }
 
 #[derive(Clone)]
 pub struct S3Uploader {
     client: Client,
     bucket: String,
+    region: String,
 }
 
 impl S3Uploader {
-    // Associated function (static method in JS) — this is the constructor.
-    // `pub` means it's accessible from outside this file (like `export` in JS).
-    pub fn new(client: Client, bucket: String) -> S3Uploader {
-        S3Uploader { client, bucket }
+    pub fn new(client: Client, bucket: String, region: String) -> S3Uploader {
+        S3Uploader { client, bucket, region }
     }
 
     // Method — called on an instance: uploader.upload(...)
@@ -55,6 +53,42 @@ impl S3Uploader {
                      // to the caller — like a throw, but explicit and part of the type system
 
         Ok(()) // everything went fine — wrap "nothing" in Ok() to signal success
+    }
+
+    // Upload an object with public-read ACL and return its permanent public URL.
+    // Unlike `upload`, this makes the object readable by anyone without credentials.
+    //
+    // The public URL format is:
+    //   https://<bucket>.s3.<region>.amazonaws.com/<key>
+    //
+    // NOTE: this requires "Block Public Access" to be DISABLED on the S3 bucket,
+    // and the bucket must allow ACLs (Object Ownership set to "ACL enabled").
+    // These settings are configured in the AWS Console under the bucket's Permissions tab.
+    pub async fn upload_public(
+        &self,
+        key: &str,
+        data: &[u8],
+    ) -> Result<String, aws_sdk_s3::Error> {
+        let body = ByteStream::from(data.to_vec());
+
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .body(body)
+            // `public-read` — anyone can GET this object without credentials.
+            // In JS SDK: { ACL: 'public-read' }
+            .acl(ObjectCannedAcl::PublicRead)
+            .send()
+            .await?;
+
+        // Build the permanent public URL — no expiry, no signature needed.
+        let url = format!(
+            "https://{}.s3.{}.amazonaws.com/{}",
+            self.bucket, self.region, key
+        );
+
+        Ok(url)
     }
 
     // Generate a temporary pre-signed GET URL for an S3 object.
