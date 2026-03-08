@@ -6,10 +6,11 @@ export type Payload = {
 }
 
 export async function GET<T>(payload: Payload) {
-  const axiosResponse = await api.get<T>(payload.path, {
+  const axiosResponse = await api.get<{ data: T }>(payload.path, {
     headers: payload.headers,
   })
 
   const { data } = axiosResponse
-  return data
+
+  return data.data
 }

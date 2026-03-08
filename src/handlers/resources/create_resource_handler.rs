@@ -46,6 +46,7 @@ pub async fn new_resource_handler(
         Some(body.title.as_str()),
         body.summary.as_deref(),
         body.description.as_deref(),
+
     ]
     .iter()
     .filter_map(|s| *s)

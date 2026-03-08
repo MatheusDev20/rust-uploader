@@ -5,7 +5,7 @@ CREATE TABLE resource_contents (
 
     raw_text TEXT,
 
-    language      TEXT NOT NULL DEFAULT 'portuguese',
+    language  TEXT NOT NULL DEFAULT 'portuguese',
 
     search_vector TSVECTOR,
 

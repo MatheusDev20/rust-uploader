@@ -2,4 +2,4 @@ mod model;
 mod queries;
 
 pub use model::ResourceContent;
-pub use queries::insert_content;
+pub use queries::{insert_content, search, ResourceSearchResult};

@@ -8,6 +8,12 @@ export type WatchParams = {
 
 type Base = { id: string; title: string }
 
+export type ResourceType = {
+  name: string
+  display: string
+  id: number
+  status: string
+}
 export type VideoContent = Base & {
   type: 'videos'
   status: string
