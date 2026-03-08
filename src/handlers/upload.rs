@@ -181,8 +181,9 @@ pub async fn upload_handler(
         }
 
         // Phase 2: mark 'ready' ONLY after the processed MP4 exists in S3.
+        // Also stores the processed_key so the stream endpoint knows which object to sign.
         // If this fails, the video stays 'pending' — safe to retry later.
-        mark_ready(&db, video_id).await.ok();
+        mark_ready(&db, video_id, &processed_key).await.ok();
     });
 
     // Return immediately — the video is still 'pending' in the DB.

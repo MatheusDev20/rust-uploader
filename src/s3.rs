@@ -1,4 +1,5 @@
-use aws_sdk_s3::{Client, primitives::ByteStream};
+use aws_sdk_s3::{Client, presigning::PresigningConfig, primitives::ByteStream};
+use std::time::Duration;
 
 pub async fn create_uploader() -> S3Uploader {
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
@@ -54,5 +55,39 @@ impl S3Uploader {
                      // to the caller — like a throw, but explicit and part of the type system
 
         Ok(()) // everything went fine — wrap "nothing" in Ok() to signal success
+    }
+
+    // Generate a temporary pre-signed GET URL for an S3 object.
+    //
+    // A pre-signed URL is a regular HTTPS URL with AWS credentials baked in as
+    // query parameters (X-Amz-Signature, X-Amz-Expires, etc.). Anyone who holds
+    // the URL can GET the object — no AWS credentials needed on the client.
+    //
+    // `expires_in` controls how long the URL is valid. After that it returns 403.
+    // This is equivalent to getSignedUrl(client, new GetObjectCommand({...}), { expiresIn: 3600 })
+    // in the JS SDK.
+    //
+    // Returns `Result<String, String>` — success is the URL, failure is an error message.
+    // We map SDK errors to String so callers don't need to import SDK error types.
+    pub async fn presign_url(
+        &self,
+        key: &str,
+        expires_in: Duration,
+    ) -> Result<String, String> {
+        // PresigningConfig::expires_in can fail if the duration is zero or too large.
+        let config = PresigningConfig::expires_in(expires_in)
+            .map_err(|e| e.to_string())?;
+
+        // `.presigned()` doesn't actually make an HTTP request — it just signs the URL locally.
+        // This is different from `.send()` which executes the request.
+        let presigned = self.client
+            .get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(config)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(presigned.uri().to_string())
     }
 }

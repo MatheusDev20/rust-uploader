@@ -1,6 +1,20 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+// `FromRow` lets sqlx automatically map a DB row to this struct.
+// Each field name must match the column name in the SELECT — like an ORM's model in JS.
+//
+// `Option<String>` for processed_key because it's NULL until the background
+// transcoding job finishes and calls mark_ready().
+#[derive(sqlx::FromRow)]
+pub struct Video {
+    pub id: Uuid,
+    pub title: String,
+    pub status: String,
+    pub source_key: String,
+    pub processed_key: Option<String>,
+}
+
 // Phase 1: insert a record BEFORE the S3 upload.
 // This way we always have a trace of the attempt, even if S3 fails later.
 //
@@ -37,13 +51,31 @@ pub async fn create_pending(
 }
 
 // Phase 2: mark the record ready once S3 confirms the upload succeeded.
-// If this update fails (e.g. DB is temporarily down), the record stays 'pending'
-// and can be reconciled later by a background job — nothing is lost.
-pub async fn mark_ready(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
-    sqlx::query("UPDATE videos SET status = 'ready', updated_at = now() WHERE id = $1")
-        .bind(id)
-        .execute(pool)
-        .await?;
+// Now also stores the processed_key so the stream endpoint knows which S3 object to sign.
+pub async fn mark_ready(
+    pool: &PgPool,
+    id: Uuid,
+    processed_key: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE videos SET status = 'ready', processed_key = $2, updated_at = now() WHERE id = $1",
+    )
+    .bind(id)
+    .bind(processed_key)
+    .execute(pool)
+    .await?;
 
     Ok(())
+}
+
+// Fetch a single video by ID.
+// Returns Option<Video>: None if the ID doesn't exist — like `findById` in JS ORMs.
+// `query_as::<_, Video>` tells sqlx to map each row into a `Video` struct using FromRow.
+pub async fn get_video(pool: &PgPool, id: Uuid) -> Result<Option<Video>, sqlx::Error> {
+    sqlx::query_as::<_, Video>(
+        "SELECT id, title, status, source_key, processed_key FROM videos WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
 }
