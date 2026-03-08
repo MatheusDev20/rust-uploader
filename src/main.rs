@@ -2,9 +2,9 @@ mod s3;
 mod http;
 mod utils;
 mod ffmpeg;
-
 mod entities;
 mod handlers;
+mod extractors;
 mod routes;
 
 
@@ -47,15 +47,10 @@ async fn main() {
     // .ok() means: if the file doesn't exist, silently continue instead of crashing
     dotenvy::dotenv().ok();
 
+
     let uploader = create_uploader().await;
     let pool = PgPool::connect(&std::env::var("DATABASE_URL").unwrap()).await.unwrap();
 
-    // sqlx::migrate!() is a macro that embeds every file from the `migrations/` folder
-    // into the binary at compile time (like include_str! but for a whole directory).
-    // At runtime, .run(&pool) compares the embedded list against the `_sqlx_migrations`
-    // table in Postgres and applies only the ones not yet recorded — idempotent and safe
-    // to call on every startup. In JS this is equivalent to running `knex migrate:latest`
-    // or Prisma's `migrate deploy` as part of your server boot script.
     sqlx::migrate!().run(&pool).await.unwrap();
 
     let state = AppState { uploader, db: pool };
